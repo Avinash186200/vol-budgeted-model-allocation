@@ -82,3 +82,20 @@ def test_noise_has_no_ic_and_signal_is_recovered():
     sig = rank_ic(run_backtest(*_panel(signal=0.03, n=8, months=80, seed=3), SMALL)[2])
     assert abs(noise) < 0.2
     assert sig > noise + 0.1
+
+
+def test_make_synthetic_data_script_roundtrip(tmp_path):
+    """CSVs written by the script load back to the same monthly panel, macro and market series."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import make_synthetic_data
+
+    from volbudget.data import load_daily_csv
+
+    assert make_synthetic_data.main(["--models", "4", "--months", "24", "--out", str(tmp_path)]) == 0
+    p = make_synthetic(4, 24, 0.01, 7)
+    pd.testing.assert_frame_equal(daily_to_monthly(load_daily_csv(tmp_path / "returns.csv")),
+                                  daily_to_monthly(p.daily), check_freq=False)
+    macro = pd.read_csv(tmp_path / "macro.csv", parse_dates=["date"]).set_index("date")
+    market = pd.read_csv(tmp_path / "market.csv", parse_dates=["date"]).set_index("date")["market"]
+    assert np.allclose(macro.to_numpy(), p.macro.to_numpy())
+    assert np.allclose(market.to_numpy(), p.market.to_numpy())

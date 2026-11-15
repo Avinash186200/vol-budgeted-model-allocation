@@ -6,6 +6,10 @@ A monthly allocator for a book of systematic trading models. For each model it p
 
 I built this for a book of systematic trading models. The return file is proprietary and is not in this repo. Everything here runs on a **synthetic daily return panel with the same shape** (a `date` column, one column per model, leading zeros before each model goes live), so you can clone it and reproduce every number below.
 
+## What problem this solves
+
+A fund runs many trading models and has to decide each month how much capital each one gets, without breaking its risk limits. The idea tested here is to forecast which models will have a good next month and tilt capital towards them, inside fixed volatility budgets. The honest answer on real data was that the forecast did not beat a simple risk-based split, and this repo shows how to reach that answer cleanly.
+
 ## At a glance
 
 | | |
@@ -18,9 +22,16 @@ I built this for a book of systematic trading models. The return file is proprie
 
 ## How it works
 
-```
-daily returns ─► monthly compounding ─► features at t ─► per-model P(up) ─► factor Σ ─► vol-budgeted QP ─► blend with EW ─► returns in t+1
-                 data.py                features.py      model.py          optimizer.py                     backtest.py
+```mermaid
+flowchart LR
+    A[daily returns<br/>data.py] --> B[compound to monthly<br/>data.py]
+    B --> C[features at month t<br/>macro lagged 1 month<br/>features.py]
+    C --> D[per-model P up<br/>LogReg + boosting<br/>model.py]
+    B --> E[factor covariance<br/>market + 3 PCs<br/>optimizer.py]
+    D --> F[vol-budgeted optimiser<br/>model, group, portfolio caps]
+    E --> F
+    F --> G[80/20 blend with equal weight]
+    G --> H[returns in month t+1, net of costs<br/>vs equal weight and vol parity<br/>backtest.py, metrics.py]
 ```
 
 1. **Monthly returns**: compound the daily returns. Leading zeros are pre-inception and become NaN.
@@ -29,8 +40,36 @@ daily returns ─► monthly compounding ─► features at t ─► per-model P
 4. **Covariance**: `Σ = B Σ_F B' + D`, with the market as factor 1 and three PCs of the market residuals, over a 36-month window.
 5. **Optimiser**: maximise `w'(P - 0.5)` with `w >= 0`, `sum(w) <= 1`, `w_i σ_i <= 1%`, group vol <= 3% and portfolio vol <= 6%. Then `w = 0.8 w_opt + 0.2 w_EW`.
 6. **Costs**: 5 bps per unit of one-way turnover, with weights drifted between rebalances.
+7. **Compare** with equal weight and vol parity on the same months, and report the rank IC of the forecasts.
+
+A step-by-step code walkthrough with real intermediate output is in [docs/walkthrough.md](docs/walkthrough.md).
+
+## Key concepts
+
+- **Trading model**: one systematic strategy with its own daily return stream. The allocator weights models, not assets.
+- **Staggered inception**: models go live at different dates. Zeros before a model's first trade are "not live yet", not flat returns.
+- **Walk-forward by date**: at month t, train only on rows whose label month is already over, then predict month t+1.
+- **Publication lag**: a macro number for month t is often released later, so it can only be used from month t+1.
+- **P(up)**: the predicted probability that a model's next month is positive. The optimiser uses `P - 0.5` as its expected-return signal.
+- **Factor covariance**: risk built from a few common factors plus each model's own noise. It is more stable than a raw sample covariance when there are many models and few months.
+- **Volatility budget**: a cap on the risk each model, each group and the whole book can take, measured as annualised volatility.
+- **Equal weight and vol parity**: two simple baselines. Vol parity gives each model weight in proportion to 1/volatility.
+- **Rank IC**: the rank correlation between the forecasts and the returns that followed. Near zero means no forecasting skill.
+- **Turnover cost**: a charge in basis points for each unit of weight traded.
+- **Sharpe ratio**: annualised return divided by annualised volatility. With 36 months it has a standard error of about 0.5.
+
+## What you will learn
+
+- How to turn a ragged daily return panel into clean monthly data.
+- How to do date-based walk-forward selection, and how positional indexing can leak the future.
+- How to apply a publication lag to macro features.
+- How to write a long-only optimiser with model, group and portfolio vol caps in SciPy.
+- Why you should always compare with vol parity, not only equal weight.
+- How a noise test shows when a forecast layer is just adding turnover.
 
 ## Results on synthetic data
+
+All numbers in this section come from the **synthetic** panel. They show how the method behaves, not what it earns.
 
 `python scripts/run_backtest.py` (24 models, 156 months, last 36 out of sample, 5 bps costs, seed 7):
 
@@ -64,9 +103,10 @@ Details are in [docs/methodology.md](docs/methodology.md).
 
 ```
 src/volbudget/   data.py · features.py · model.py · optimizer.py · backtest.py · metrics.py
-scripts/         run_backtest.py
+scripts/         run_backtest.py · make_synthetic_data.py (writes data/returns.csv, macro.csv, market.csv)
 tests/           compounding, feature timing, macro lag, future-perturbation, budget, noise test
-docs/            methodology.md
+docs/            README.md (index) · methodology.md · walkthrough.md
+original/        the original research code, sanitised (read-only)
 ```
 
 ## Quick start
@@ -76,8 +116,13 @@ pip install -r requirements.txt
 python -m pytest -q
 python scripts/run_backtest.py                  # synthetic, with planted signal
 python scripts/run_backtest.py --signal 0       # synthetic, pure noise
-python scripts/run_backtest.py --daily returns.csv --macro macro.csv --market market.csv
+python scripts/make_synthetic_data.py           # writes data/returns.csv, data/macro.csv, data/market.csv
+python scripts/run_backtest.py --daily data/returns.csv --macro data/macro.csv --market data/market.csv
 ```
+
+The last command shows how to run your own data: a daily return CSV with a `date` column and one column per model,
+and optional monthly macro and market CSVs. Each backtest takes a few minutes, because every month refits a model
+for every live trading model.
 
 ## Original research code
 
