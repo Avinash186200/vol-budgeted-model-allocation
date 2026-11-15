@@ -209,7 +209,7 @@ def _download_prices(force: bool = False) -> pd.DataFrame:
     # NOTE: these parquets start from 2016-2018 — only 2-4 years of training
     # data before the 2020 OOS window.  Adding them hurt OOS Sharpe (<real figure removed>)
     # because NaN-heavy columns caused silent model failures and spurious splits.
-    # Disabled by default; re-enable once Client extends OOS past 2024.
+    # Disabled by default; re-enable once the data extends OOS past 2024.
     # vixy_feats = _load_vixy_parquets()
     # if not vixy_feats.empty:
     #     feats = feats.join(vixy_feats, how="left")

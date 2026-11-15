@@ -1,5 +1,5 @@
 """
-run_cpo.py — main orchestrator for the Client CPO pipeline.
+run_cpo.py — main orchestrator for the CPO pipeline.
 
 Usage:
     python run_cpo.py                   # run full pipeline
@@ -28,7 +28,7 @@ from config    import OOS_MONTHS, RESULTS_DIR
 def main(force_features: bool = False) -> None:
 
     print("=" * 60)
-    print("  Client CPO — Conditional Portfolio Optimisation")
+    print("  CPO — Conditional Portfolio Optimisation")
     print("=" * 60)
 
     # ── 1. Data ───────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ def main(force_features: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Client CPO walk-forward backtest")
+    ap = argparse.ArgumentParser(description="CPO walk-forward backtest")
     ap.add_argument("--force-features", action="store_true",
                     help="Re-download macro features from Finnhub")
     args = ap.parse_args()

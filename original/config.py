@@ -1,5 +1,5 @@
 """
-config.py — all settings for the Client CPO solution.
+config.py — all settings for the CPO solution.
 """
 from pathlib import Path
 
@@ -37,7 +37,7 @@ LGB_PARAMS = dict(
     verbose         = -1,
 )
 
-# ── Client constraint structure ────────────────────────────────────────────
+# ── Constraint structure ───────────────────────────────────────────────────
 PORT_VOL_CAP = 0.06   # 6% annualized
 
 # per-model annualized vol caps  (weight × ann_vol ≤ cap)
