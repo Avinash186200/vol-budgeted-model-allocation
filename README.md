@@ -1,10 +1,10 @@
 # Vol-Budgeted Model Allocation
 
+[![CI](https://github.com/Avinash186200/vol-budgeted-model-allocation/actions/workflows/ci.yml/badge.svg)](https://github.com/Avinash186200/vol-budgeted-model-allocation/actions/workflows/ci.yml) ![Python](https://img.shields.io/badge/python-3.11-blue) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A monthly allocator for a book of systematic trading models. For each model it predicts the probability that next month is positive, then sizes the book with a long-only optimiser under a three-tier volatility budget: per model, per group of models, and for the whole portfolio.
 
 I built this for a book of systematic trading models. The return file is proprietary and is not in this repo. Everything here runs on a **synthetic daily return panel with the same shape** (a `date` column, one column per model, leading zeros before each model goes live), so you can clone it and reproduce every number below.
-
-[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
 ## At a glance
 
@@ -79,6 +79,16 @@ python scripts/run_backtest.py --signal 0       # synthetic, pure noise
 python scripts/run_backtest.py --daily returns.csv --macro macro.csv --market market.csv
 ```
 
+## Original research code
+
+[`original/`](original/README.md) holds the code as I first wrote it for this work, sanitised and nothing else:
+client, company and person names replaced, credentials and local paths removed, data files and notebook outputs
+dropped, and internal deployment notes, client-facing decks and client findings memos left out. It is kept so
+the real work can be read alongside the maintained version. Some of it contains the issues
+described above; comparing the two shows each fix.
+
 ## License
 
 MIT
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [CHANGELOG](CHANGELOG.md).
