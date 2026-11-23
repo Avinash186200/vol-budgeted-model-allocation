@@ -99,14 +99,45 @@ Details are in [docs/methodology.md](docs/methodology.md).
 | No transaction costs | Optimistic, especially for the optimiser, which turns over more | 5 bps on turnover, with drifted weights |
 | Optimiser compared mainly with equal weight | The stronger simple baseline (vol parity) was ignored | Vol parity reported alongside |
 
+## Follow-up: minimum variance, no forecasts
+
+After the forecast layer failed, I tried the opposite: build the book from the covariance alone. The
+`volbudget.min_variance` package fits a Ledoit-Wolf shrunk covariance on three daily look-backs (252, 504 and 756
+days), solves long-only minimum variance on each, averages the weights and blends them with vol parity. It
+rebalances every 5 trading days with a T+2 lag, charges costs on turnover, and is tested on five back-to-back
+two-year windows. There is no model fitted to returns anywhere in it. The full write-up, including how it differs
+from the optimiser above, is in [docs/min_variance.md](docs/min_variance.md).
+
+What I found, on synthetic data only:
+
+- Uncapped, minimum variance beats vol parity in 5 of 5 windows on the default panel (net Sharpe 3.51 for the
+  blend against 2.27), because the synthetic models share hidden factors that it can hedge out.
+- It does that by putting up to seven times the per-model risk limit on a few models. With the same vol budget
+  enforced on both, the capped blend (2.30) is no better than capped vol parity (2.32).
+- On a control panel of independent models with equal Sharpe ratios, it adds turnover and nothing else.
+
+Auditing my original code for this follow-up, I found no look-ahead in the weights, but the blend weight was picked
+on the same five windows it was then scored on, the two legs of the blend were on different scales, and the blend
+breached the per-model and group caps. The maintained version chooses the blend weight on the two oldest windows
+only, scales both legs to the same vol, and projects the final weights onto every cap. I don't publish the
+real-data figures.
+
+```bash
+python scripts/run_min_variance.py                 # synthetic panel, five windows, about 30 s
+python scripts/run_min_variance.py --independent   # control: nothing for min-variance to find
+python scripts/run_min_variance.py --sweep         # ruled-out constructions and overlays (slow)
+```
+
 ## Repo layout
 
 ```
 src/volbudget/   data.py · features.py · model.py · optimizer.py · backtest.py · metrics.py
-scripts/         run_backtest.py · make_synthetic_data.py (writes data/returns.csv, macro.csv, market.csv)
-tests/           compounding, feature timing, macro lag, future-perturbation, budget, noise test
-docs/            README.md (index) · methodology.md · walkthrough.md
-original/        the original research code (read-only)
+  min_variance/  covariance.py · weights.py · backtest.py · evaluation.py · sweep.py (the non-ML follow-up)
+scripts/         run_backtest.py · run_min_variance.py · make_synthetic_data.py (writes data/*.csv)
+tests/           test_pipeline.py: compounding, feature timing, macro lag, future-perturbation, budget, noise test
+                 test_min_variance.py: look-ahead, T+2 lag, caps, costs, bootstrap, hold-out choice, control panel
+docs/            README.md (index) · methodology.md · walkthrough.md · min_variance.md
+original/        the original research code (read-only); min_variance/ holds the follow-up
 ```
 
 ## Quick start

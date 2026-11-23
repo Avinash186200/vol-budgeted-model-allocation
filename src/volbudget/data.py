@@ -54,6 +54,7 @@ class SyntheticPanel:
     daily: pd.DataFrame       # daily model returns (leading zeros pre-inception)
     macro: pd.DataFrame       # monthly macro features, dated by observation month
     market: pd.Series         # monthly market return (factor for covariance)
+    market_daily: pd.Series | None = None  # daily market return (used by the min-variance overlays)
 
 
 def make_synthetic(
@@ -121,4 +122,24 @@ def make_synthetic(
     daily.index.name = "date"
     market = (pd.Series(mkt_d, index=days) + 1).resample("ME").prod() - 1
     market.name = "market"
-    return SyntheticPanel(daily=daily, macro=macro, market=market)
+    market_daily = pd.Series(mkt_d, index=days, name="market")
+    market_daily.index.name = "date"
+    return SyntheticPanel(daily=daily, macro=macro, market=market, market_daily=market_daily)
+
+
+def make_independent_panel(n_models: int = 24, n_days: int = 3400, sharpe: float = 1.0,
+                           seed: int = 11) -> pd.DataFrame:
+    """A control panel: independent models with different vols but the same Sharpe.
+
+    With no correlation structure and equal Sharpe ratios, vol parity is already
+    the best long-only mix, so a risk-only optimiser should add nothing here. The
+    min-variance tests and the docs use it as the "nothing to find" case.
+    """
+    rng = np.random.default_rng(seed)
+    days = pd.bdate_range("2010-01-01", periods=n_days)
+    vol = rng.uniform(0.002, 0.008, n_models)
+    drift = sharpe / np.sqrt(252) * vol
+    R = drift[None, :] + rng.normal(0, 1, (n_days, n_models)) * vol[None, :]
+    out = pd.DataFrame(R, index=days, columns=[f"model {i + 1}" for i in range(n_models)])
+    out.index.name = "date"
+    return out

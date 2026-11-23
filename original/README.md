@@ -12,4 +12,11 @@ What this means for you:
 
 Contents:
 
-- `.`: main research code
+- `.`: main research code (the monthly, forecast-driven allocator)
+- [`min_variance/`](min_variance/): the later non-ML follow-up (Ledoit-Wolf minimum variance blended with vol
+  parity, daily cadence) and its experiment scripts. It imported modules from the main research repo that are not
+  part of this record, so it does not run on its own. The maintained version is
+  [`src/volbudget/min_variance/`](../src/volbudget/min_variance/), and
+  [docs/min_variance.md](../docs/min_variance.md) lists what I changed and why. Real-data figures in its comments
+  and print statements are replaced with `<real figure removed>`, and the result memos that went with it are left
+  out because they report real-data numbers.
