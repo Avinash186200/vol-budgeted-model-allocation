@@ -128,22 +128,92 @@ python scripts/run_min_variance.py --independent   # control: nothing for min-va
 python scripts/run_min_variance.py --sweep         # ruled-out constructions and overlays (slow)
 ```
 
+## Follow-up 2: a conditional allocation selector (1.4.0)
+
+**Scenario.** An allocator has five ways to build the book (equal weight, vol parity, minimum variance, equal risk
+contribution and the vol-budgeted optimiser above) and suspects the best one depends on the regime. They want to know
+whether an ML selector that picks the method each month beats always using one method, after costs. (A scenario on
+synthetic data, not a record of real work.)
+
+The `volbudget.selector` package computes point-in-time regime features at each month-end (trailing vol, average
+correlation, first-PC share, dispersion, trend and each method's recent relative Sharpe), labels each month with the
+method that had the best risk-adjusted return over the next month, and trains a multinomial logistic regression and
+a random forest. The **hard** selector holds the most probable method's book; the **soft** one blends the five books
+by predicted probability. Training rows are purged and embargoed (`s + h + 1 <= t`), models are refit on an
+expanding window, all 24 configurations are scored on a development period only, and the last 60 months are run
+once. It also adds a **long-short optimiser** in cvxpy (`w = w_long - w_short`, 2% a year borrow on shorts, gross
+1.5 and net 0 to 1 limits, a turnover penalty and the same vol budget), compared with the same problem long-only.
+
+The synthetic generator gains a regime mode: a hidden calm/stress state that changes which method wins (planted,
+at two strengths), and the unchanged generator as the control. The main result is from ten seeds (101 to 110) that
+were not used while building anything (`results/selector/multiseed.json`, `modes.<mode>.summary.selectors`).
+Selector held-out net Sharpe minus the **best fixed method chosen on the development period**; "significant" means
+a paired block-bootstrap P(diff <= 0) below a Bonferroni threshold, 0.0125 for four selectors per panel or 0.0042
+for all 12 selector-panel tests, with 21-day blocks:
+
+| Panel | Median diff (four selectors) | Seeds ahead | Significant (4 tests) | Significant (12 tests) |
+|---|---|---|---|---|
+| Planted, strong (s = 2) | +1.36 to +1.49 | 10 / 10 for every selector | 6 to 8 / 10 | 4 to 6 / 10 |
+| Planted, weaker (s = 1) | +0.28 to +0.47 | 8 to 10 / 10 | 1 / 10 | 0 to 1 / 10 |
+| Control (no regime effect) | -0.11 to -0.02 | 0 to 3 / 10 | 0 / 10 | 0 / 10 |
+
+What I found:
+
+- **When the regime effect is strong, the selector beats every fixed method on every untouched seed**, including the
+  method that turned out best on the held-out period itself, and the gap is significant on about half to most
+  seeds, depending on the correction and block length. **When the effect is weaker, it is usually ahead but by
+  little, and almost never significantly. With no effect, it adds nothing** (the small shortfall is mostly extra
+  turnover), which is also the check against leakage.
+- Neither the hard (argmax) nor the soft (probability-blend) selector is reliably better: soft won 50 to 60% of
+  same-seed pairs (`share_soft_beats_hard`).
+- `regime_rule`, a reference that is a hard switch told the current true state, was beaten by the selectors on 4 or
+  5 of 10 strong-panel seeds; it is not a ceiling.
+- The best fixed method changed from seed to seed on the strong panel, so no single fixed method was a safe default.
+- The long-short book lost to the same problem solved long-only on 29 of 30 seed-mode runs; its trailing-mean signal
+  is late at regime turns and the short side pays borrow.
+- **Seed 7, the seed I used while designing the planted factor, is disclosed separately**: it is the least favourable
+  case. At s = 2 the hard selectors lost to ERC (-0.68 and -0.36) and the soft ones were +0.17 and +0.19, none
+  significant; at s = 1 three of four trailed the dev-chosen minimum variance. Held-out results on seed 7 were
+  printed while I tuned the generator, seeds 8 and 9 were used for generator checks and seeds 5, 11 and 23 in an
+  earlier review (none is in 101 to 110), and the `top_pc_share` feature was added with the generator's design in
+  mind.
+- **Limitations.** The planted generator was designed so that the best method switches with a persistent,
+  observable state, that is, so that a regime selector can win; the s = 2 result shows the pipeline can find an
+  effect built for it, not that one exists in real markets. The synthetic Sharpe levels are inflated; read the
+  differences. Results are bit-reproducible single-threaded (the scripts pin BLAS to one thread); a different thread
+  count or library version can move individual differences by about 0.3.
+
+The full method, timeline, turnover and cost tables, the multiple-testing note and the limitations are in
+[docs/selector.md](docs/selector.md).
+
+```bash
+python scripts/run_selector.py                  # seed 7, planted regime effect, strength 2 (about 1.5 min)
+python scripts/run_selector.py --strength 1     # seed 7, weaker planted effect
+python scripts/run_selector.py --mode control   # seed 7, no regime effect
+python scripts/run_selector_sweep.py            # seeds 101-110, all three panels (about 45 min, not in CI)
+```
+
 ## Repo layout
 
 ```
 src/volbudget/   data.py · features.py · model.py · optimizer.py · backtest.py · metrics.py
   min_variance/  covariance.py · weights.py · backtest.py · evaluation.py · sweep.py (the non-ML follow-up)
-scripts/         run_backtest.py · run_min_variance.py · make_synthetic_data.py (writes data/*.csv)
+  selector/      methods.py · features.py · walkforward.py · longshort.py · evaluation.py (regime selector)
+scripts/         run_backtest.py · run_min_variance.py · run_selector.py · run_selector_sweep.py ·
+                 make_synthetic_data.py (writes data/*.csv)
 tests/           test_pipeline.py: compounding, feature timing, macro lag, future-perturbation, budget, noise test
                  test_min_variance.py: look-ahead, T+2 lag, caps, costs, bootstrap, hold-out choice, control panel
-docs/            README.md (index) · methodology.md · walkthrough.md · min_variance.md
+                 test_selector.py: point-in-time features and targets, purge/embargo, held-out isolation, books
+                 test_longshort.py: limits, long/short split, borrow, turnover penalty (skipped without cvxpy)
+results/selector/ multiseed.json (10 seeds) and per-run results.json behind every selector number
+docs/            README.md (index) · methodology.md · walkthrough.md · min_variance.md · selector.md
 original/        the original research code (read-only); min_variance/ holds the follow-up
 ```
 
 ## Quick start
 
 ```bash
-pip install -r requirements.txt
+pip install -e ".[dev,longshort]"   # runtime + pytest (dev) + cvxpy (longshort)
 python -m pytest -q
 python scripts/run_backtest.py                  # synthetic, with planted signal
 python scripts/run_backtest.py --signal 0       # synthetic, pure noise

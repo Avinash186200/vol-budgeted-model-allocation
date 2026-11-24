@@ -10,7 +10,7 @@ git clone https://github.com/Avinash186200/vol-budgeted-model-allocation.git
 cd vol-budgeted-model-allocation
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -e ".[dev,longshort]"   # runtime + pytest + cvxpy
 python -m pytest -q
 ```
 

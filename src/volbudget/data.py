@@ -55,6 +55,7 @@ class SyntheticPanel:
     macro: pd.DataFrame       # monthly macro features, dated by observation month
     market: pd.Series         # monthly market return (factor for covariance)
     market_daily: pd.Series | None = None  # daily market return (used by the min-variance overlays)
+    regime: pd.Series | None = None        # monthly hidden state (0 calm, 1 stress) when the regime mode is on
 
 
 def make_synthetic(
@@ -62,6 +63,7 @@ def make_synthetic(
     n_months: int = 156,
     signal_strength: float = 0.0,
     seed: int = 7,
+    regime_strength: float = 0.0,
 ) -> SyntheticPanel:
     """Generate a daily return panel with a factor structure and optional signal.
 
@@ -78,6 +80,23 @@ def make_synthetic(
         signal_strength: Size of the planted macro effect (monthly return per
             unit of the standardised macro series).
         seed: RNG seed.
+        regime_strength: Size of the planted regime effect (see below). 0, the
+            default, switches the regime mode off and leaves every other output
+            unchanged.
+
+    Regime mode (``regime_strength > 0``): a hidden monthly state follows a
+    two-state Markov chain (calm and stress; a calm spell lasts about 12 months
+    and a stress spell about 8 on average). Every model loads on an extra common
+    factor, most of them positively (loadings uniform on [-0.6, 1.4]). In calm
+    months that factor has a positive drift and low vol; in stress months its vol
+    is 2.5 times higher and its drift turns negative. Books with a net exposure to
+    the factor (equal weight, vol parity, the return-chasing optimiser) earn its
+    premium in calm months and lose in stress months, while minimum variance can
+    hedge most of it out by mixing positive and negative loaders. So the best
+    construction method depends on the state, and the state is persistent and
+    visible in trailing vol and in how much variance the first principal
+    component explains. The regime draws use their own RNG stream, so the rest of
+    the panel is the same as with ``regime_strength=0`` and the same seed.
     """
     rng = np.random.default_rng(seed)
     months = pd.date_range("2008-01-31", periods=n_months, freq="ME")
@@ -113,6 +132,13 @@ def make_synthetic(
          + rng.normal(0, 1, (n_days, n_models)) * idio[None, :]
          + sig_daily[:, None] * sens[None, :])
 
+    regime = None
+    if regime_strength > 0:
+        reg_d, regime = _regime_component(n_months, m_pos, n_models, regime_strength, seed)
+        R = R + reg_d
+        regime = pd.Series(regime, index=months, name="regime")
+        regime.index.name = "date"
+
     start = rng.integers(0, n_months // 3, n_models)
     start[0] = 0
     for i in range(n_models):
@@ -124,7 +150,28 @@ def make_synthetic(
     market.name = "market"
     market_daily = pd.Series(mkt_d, index=days, name="market")
     market_daily.index.name = "date"
-    return SyntheticPanel(daily=daily, macro=macro, market=market, market_daily=market_daily)
+    return SyntheticPanel(daily=daily, macro=macro, market=market, market_daily=market_daily, regime=regime)
+
+
+def _regime_component(n_months: int, m_pos: np.ndarray, n_models: int, strength: float,
+                      seed: int) -> tuple[np.ndarray, np.ndarray]:
+    """Daily returns of the regime factor times each model's loading, and the monthly state path.
+
+    Calm (state 0): factor drift ``+20 bp * strength`` a day, daily vol 0.4%.
+    Stress (state 1): drift ``-12 bp * strength`` a day, daily vol 1.0%.
+    Monthly switch probabilities: calm to stress 8%, stress to calm 12%.
+    """
+    rng = np.random.default_rng([seed, 2026])
+    state = np.zeros(n_months, dtype=int)
+    for t in range(1, n_months):
+        p_switch = 0.08 if state[t - 1] == 0 else 0.12
+        state[t] = 1 - state[t - 1] if rng.random() < p_switch else state[t - 1]
+    s_day = state[m_pos]
+    mean = np.where(s_day == 1, -0.0012, 0.0020) * strength
+    vol = np.where(s_day == 1, 0.010, 0.004)
+    f = mean + vol * rng.normal(0, 1, len(m_pos))
+    load = rng.uniform(-0.6, 1.4, n_models)
+    return f[:, None] * load[None, :], state
 
 
 def make_independent_panel(n_models: int = 24, n_days: int = 3400, sharpe: float = 1.0,
