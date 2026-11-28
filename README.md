@@ -6,6 +6,10 @@ A monthly allocator for a book of systematic trading models. For each model it p
 
 I built this for a book of systematic trading models. The return file is proprietary and is not in this repo. Everything here runs on a **synthetic daily return panel with the same shape** (a `date` column, one column per model, leading zeros before each model goes live), so you can clone it and reproduce every number below.
 
+## Watch
+
+- Video walkthrough: [Data Leakage, Walk-Forward Validation, Purging and Embargo](https://youtu.be/QTZUTdkPCxQ)
+
 ## What problem this solves
 
 A fund runs many trading models and has to decide each month how much capital each one gets, without breaking its risk limits. The idea tested here is to forecast which models will have a good next month and tilt capital towards them, inside fixed volatility budgets. The honest answer on real data was that the forecast did not beat a simple risk-based split, and this repo shows how to reach that answer cleanly.
